@@ -44,6 +44,8 @@ https://github.com/fintechee transferred this repo to https://github.com/fintech
 
 We built a forum for sharing trading signals and trading skills.
 https://www.fintechee.org
+Now(2022-01) we are reforming it.
+The number of generating ssl cert exceeded the rate limit, so we need to wait until we are allowed to generate new certs in the next term.
 
 We reformed it last weekend, now, we are trying to restore the trading signals. If you are urgent, please check this page to follow:
 https://www.fintechee.com/shared.html
@@ -85,6 +87,7 @@ I received a lot of questions that asked how to use the Javasacript files in thi
 Actually, the usage is different from Nodejs, so, you DON'T need to use "node xxx.js" to run it.
 And, it's much EASIER to run them. Because they are browser-based, so, what you need to do is just open the WEB trader of Fintechee and copy-paste the source codes into the CONSOLE panel of the WEB trader and then click the RUN button. Then everything is DONE.
 Each file in this repo is indepenedent to each other. You can use them respectively.
+EAs and indicators are stored ONLY on your LOCAL browser and NEVER uploaded to the server side. We use Web LocalStorage. The secrets of your trading strategies are protected.
 
 WEB Trader: https://www.fintechee.com/web-trader/
 
