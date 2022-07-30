@@ -1,13 +1,18 @@
-registerIndicator("zigzag", "ZigZag based on SAR(v1.03)", function (context) {
+registerIndicator("fibonacci_retracements", "Fibonacci retracements viewer based on ZigZag(v1.0)", function (context) {
   var dataInputHigh = getDataInput(context, 0)
   var dataInputLow = getDataInput(context, 1)
 
+  var dataOutputFibo = getDataOutput(context, "fibo")
   var dataOutputZZLine = getDataOutput(context, "zigzagLine")
   var dataOutputZZ = getDataOutput(context, "zigzag")
   var dataOutput = getDataOutput(context, "sar")
   var dataOutputIsLong = getDataOutput(context, "isLong")
   var dataOutputAf = getDataOutput(context, "af")
   var dataOutputEp = getDataOutput(context, "ep")
+  var fiboLevel0 = getDataOutput(context, "fiboLevel0")
+  var fiboLevel1 = getDataOutput(context, "fiboLevel1")
+  var fiboLevel2 = getDataOutput(context, "fiboLevel2")
+  var fiboLevel3 = getDataOutput(context, "fiboLevel3")
 
   var acceleration = getIndiParameter(context, "acceleration")
   var afMax = getIndiParameter(context, "afMax")
@@ -119,29 +124,47 @@ registerIndicator("zigzag", "ZigZag based on SAR(v1.03)", function (context) {
   var zigzag = []
   var latestZZ = null
   var latestZZIdx = -1
+  var latestZZ2 = null
 
   if (calculatedLength > 0) {
     dataOutputZZ[calculatedLength - 1] = 0
     dataOutputZZLine[calculatedLength - 1] = 0
+    dataOutputFibo[calculatedLength - 1] = 0
+    fiboLevel0[calculatedLength - 1] = 0.382
+    fiboLevel1[calculatedLength - 1] = 0.5
+    fiboLevel2[calculatedLength - 1] = 0.618
+    fiboLevel3[calculatedLength - 1] = 1.618
 
     for (i = arrLen - 1; i >= 0; i--) {
       if (dataOutputZZ[i] != 0) {
-        latestZZ = {
-          value: dataOutputZZ[i],
-          index: i
+        if (latestZZ == null) {
+          latestZZ = {
+            value: dataOutputZZ[i],
+            index: i
+          }
+
+          latestZZIdx = i
+        } else {
+          latestZZ2 = {
+            value: dataOutputZZ[i],
+            index: i
+          }
+
+          break
         }
-
-        latestZZIdx = i
-
-        break
       }
     }
   } else {
     dataOutputZZ[0] = (dataInputHigh[0] + dataInputLow[0]) / 2
     dataOutputZZLine[0] = dataOutputZZ[0]
+    dataOutputFibo[0] = 0
 
     for (i = 1; i < arrLen; i++) {
       dataOutputZZ[i] = 0
+      fiboLevel0[i] = 0.382
+      fiboLevel1[i] = 0.5
+      fiboLevel2[i] = 0.618
+      fiboLevel3[i] = 1.618
     }
 
     latestZZ = {
@@ -207,6 +230,9 @@ registerIndicator("zigzag", "ZigZag based on SAR(v1.03)", function (context) {
   }
 
   zigzag.splice(0, 0, latestZZ)
+  if (calculatedLength > 0) {
+    zigzag.splice(0, 0, latestZZ2)
+  }
 
   var zzLen = zigzag.length > 1 ? (zigzag.length - 1) : 1
 
@@ -221,18 +247,34 @@ registerIndicator("zigzag", "ZigZag based on SAR(v1.03)", function (context) {
     })
   }
 
-  for (i = 1; i < zigzag.length; i++) {
+  var height = 0
+  var zigzagLen = zigzag.length
+
+  for (i = 2; i < zigzagLen; i++) {
     var step = (zigzag[i].value - zigzag[i - 1].value) / (zigzag[i].index - zigzag[i - 1].index)
     var nextIdx = zigzag[i].index
     var startValue = zigzag[i - 1].value
     var startIdx = zigzag[i - 1].index
+    height = Math.abs(zigzag[i - 2].value - zigzag[i - 1].value)
 
     for (var j = zigzag[i - 1].index; j < nextIdx; j++) {
       dataOutputZZLine[j] = startValue + step * (j - startIdx)
+      if (height == 0) {
+        dataOutputFibo[j] = 0
+      } else {
+        dataOutputFibo[j] = Math.abs(dataOutputZZLine[j] - zigzag[i - 1].value) / height
+      }
     }
   }
 
-  dataOutputZZLine[arrLen - 1] = zigzag[zigzag.length - 1].value
+  if (zigzagLen >= 3) {
+    height = Math.abs(zigzag[zigzagLen - 3].value - zigzag[zigzagLen - 2].value)
+
+    dataOutputZZLine[arrLen - 1] = zigzag[zigzagLen - 1].value
+    dataOutputFibo[arrLen - 1] = Math.abs(zigzag[zigzagLen - 2].value - zigzag[zigzagLen - 1].value) / height
+  } else {
+    dataOutputFibo[arrLen - 1] = 0
+  }
 },[{
   name: "acceleration",
   value: 0.01,
@@ -254,10 +296,13 @@ registerIndicator("zigzag", "ZigZag based on SAR(v1.03)", function (context) {
   index: 1
 }],
 [{
-  name: "zigzagLine",
+  name: "fibo",
   visible: true,
   renderType: RENDER_TYPE.LINE,
   color: "orange"
+},{
+  name: "zigzagLine",
+  visible: false
 },{
   name: "zigzag",
   visible: false
@@ -273,5 +318,25 @@ registerIndicator("zigzag", "ZigZag based on SAR(v1.03)", function (context) {
 },{
   name: "ep",
   visible: false
+},{
+  name: "fiboLevel0",
+  visible: true,
+  renderType: RENDER_TYPE.DASHARRAY,
+  color: "#AAAAAA"
+},{
+  name: "fiboLevel1",
+  visible: true,
+  renderType: RENDER_TYPE.DASHARRAY,
+  color: "#AAAAAA"
+},{
+  name: "fiboLevel2",
+  visible: true,
+  renderType: RENDER_TYPE.DASHARRAY,
+  color: "#AAAAAA"
+},{
+  name: "fiboLevel3",
+  visible: true,
+  renderType: RENDER_TYPE.DASHARRAY,
+  color: "#AAAAAA"
 }],
-WHERE_TO_RENDER.CHART_WINDOW)
+WHERE_TO_RENDER.SEPARATE_WINDOW)
