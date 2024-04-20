@@ -1,7 +1,7 @@
 // This EA has a built-in trailing stop management system, so, DO NOT use plugin_for_trailingstop at the same time.
 registerEA(
 "price_action",
-"A strategy based on price action(v1.04)",
+"A strategy based on price action(v1.05)",
 [{
 	name: "symbolName", // this parameter to set the symbols that you want to have trailing stops applied
 	value: "EUR/USD", // e.g. EUR/USD,GBP/USD
@@ -78,7 +78,9 @@ function (context) { // Init()
 							setObjectPropPrice2(chartHandle, trailingStopId, openTrade.stopLoss)
 						} else if (tick.bid <= openTrade.stopLoss && openTrade.bSlChanged) {
 							closeTrade(openTrade.brokerName, openTrade.accountId, openTrade.tradeId, 0, 0)
-							this.openTrades.splice(i, 1)
+							if (openTrade.tradeId == this.openTrades[i].tradeId) { // The reason I added this condition is that during backtesting, closeTrade may trigger onTransaction, which could potentially remove the item after calling syncOpenTrades.
+								this.openTrades.splice(i, 1)
+							}
 						}
 					} else {
 						if (Math.min(openTrade.stopLoss, openTrade.price) - tick.ask > openTrade.trailingStop) {
@@ -91,7 +93,9 @@ function (context) { // Init()
 							setObjectPropPrice2(chartHandle, trailingStopId, openTrade.stopLoss)
 						} else if (tick.ask >= openTrade.stopLoss && openTrade.bSlChanged) {
 							closeTrade(openTrade.brokerName, openTrade.accountId, openTrade.tradeId, 0, 0)
-							this.openTrades.splice(i, 1)
+							if (openTrade.tradeId == this.openTrades[i].tradeId) { // The reason I added this condition is that during backtesting, closeTrade may trigger onTransaction, which could potentially remove the item after calling syncOpenTrades.
+								this.openTrades.splice(i, 1)
+							}
 						}
 					}
 				}
@@ -107,7 +111,9 @@ function (context) { // Init()
 				if (openTrade.brokerName == tick.brokerName && openTrade.accountId == tick.accountId && openTrade.symbolName == tick.symbolName) {
 					if (openTrade.orderType == orderType) {
 						closeTrade(openTrade.brokerName, openTrade.accountId, openTrade.tradeId, 0, 0)
-						this.openTrades.splice(i, 1)
+						if (openTrade.tradeId == this.openTrades[i].tradeId) { // The reason I added this condition is that during backtesting, closeTrade may trigger onTransaction, which could potentially remove the item after calling syncOpenTrades.
+							this.openTrades.splice(i, 1)
+						}
 					} else {
 						reverseCnt++
 					}
@@ -145,7 +151,7 @@ function (context) { // Init()
 				this.trendUp[symbolName] = arrHigh[arrLen - 4]
 			} else if (arrClose[arrLen - 2] < arrOpen[arrLen - 2] && arrClose[arrLen - 3] > arrOpen[arrLen - 3] && arrClose[arrLen - 4] > arrOpen[arrLen - 4] && arrClose[arrLen - 2] > arrOpen[arrLen - 4]) {
 				if (typeof this.trendDown[symbolName] == "undefined") {
-					this.trendDownLines[symbolName] = addTrendLine (chartHandle, chartHandle + "_trendDown", arrTime[arrLen - 60], arrLow[arrLen - 4], arrTime[arrLen - 58], arrLow[arrLen - 4])
+					this.trendDownLines[symbolName] = addTrendLine(chartHandle, chartHandle + "_trendDown", arrTime[arrLen - 60], arrLow[arrLen - 4], arrTime[arrLen - 58], arrLow[arrLen - 4])
 				} else {
 					var trendLineId = this.trendDownLines[symbolName]
 					setObjectPropTime1(chartHandle, trendLineId, arrTime[arrLen - 60])
@@ -264,5 +270,6 @@ function (context) { // OnTransaction()
 
 		var chartHandle = context.priceAction.chartHandles[getSymbolName(trans)]
 		removeObject(chartHandle, context.priceAction.trailingStopLines[getTradeId(trans)])
+		delete context.priceAction.trailingStopLines[getTradeId(trans)]
   }
 })
