@@ -1,6 +1,8 @@
 AI Trader
 https://www.fintechee.com/ai-trader/
 
-Report.html is our backtesting result(2013-2024).
 
 We will provide some AI models for free.
+
+
+Our models are designed for long-term timeframes, meaning signals are generated less frequently. However, this approach is the least risky and has the potential to deliver a 30-50% annual profit, excluding compound interest.
