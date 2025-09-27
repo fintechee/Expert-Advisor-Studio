@@ -1,0 +1,180 @@
+//+------------------------------------------------------------------+
+//| EMA_ATR_EA.mq4                                                   |
+//| Simple EMA crossover + ATR-based SL/TP + percent-risk lot size   |
+//+------------------------------------------------------------------+
+#property strict
+#property copyright "ChatGPT"
+#property version   "1.00"
+#property description "EMA crossover with ATR-based stops and dynamic lot sizing"
+
+//--- inputs
+input int    FastEMA = 9;
+input int    SlowEMA = 21;
+input int    ATRPeriod = 14;
+input double ATRMultiplier = 1.5;       // SL = ATR * multiplier
+input double RiskPercent = 1.0;         // risk % of account balance per trade
+input double MaxLot = 2.0;
+input double MinLot = 0.01;
+input int    MagicNumber = 123456;
+input bool   UseTrailing = true;
+input double TrailingStartATR = 1.0;    // move to trailing when price moves this ATRs in profit
+input double TrailingStep = 0.5;        // trailing step in ATRs
+input bool   UseBreakEven = true;
+input double BreakEvenATR = 0.5;
+input bool   OnlyOneTradePerDirection = true;
+input bool   TradeOnMonday = true;
+input bool   TradeOnTuesday = true;
+input bool   TradeOnWednesday = true;
+input bool   TradeOnThursday = true;
+input bool   TradeOnFriday = true;
+
+//--- global
+double LotsForSymbol(string sym,double slPips);
+
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   return(INIT_SUCCEEDED);
+  }
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+  }
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick()
+  {
+   // --- only trade during allowed weekdays
+   int w=TimeDayOfWeek(TimeCurrent());
+   if((w==1 && !TradeOnMonday) || (w==2 && !TradeOnTuesday) || (w==3 && !TradeOnWednesday) ||
+      (w==4 && !TradeOnThursday) || (w==5 && !TradeOnFriday)) return;
+
+   //--- calculate indicators on the current chart timeframe
+   double fast = iMA(NULL,0,FastEMA,0,MODE_EMA,PRICE_CLOSE,1);
+   double slow = iMA(NULL,0,SlowEMA,0,MODE_EMA,PRICE_CLOSE,1);
+   double fast_prev = iMA(NULL,0,FastEMA,0,MODE_EMA,PRICE_CLOSE,2);
+   double slow_prev = iMA(NULL,0,SlowEMA,0,MODE_EMA,PRICE_CLOSE,2);
+
+   double atr = iATR(NULL,0,ATRPeriod,1);
+   if(atr<=0) return;
+
+   //--- detect crossovers on close of previous candle (safer)
+   bool bullishCrossover = (fast_prev < slow_prev) && (fast > slow);
+   bool bearishCrossover = (fast_prev > slow_prev) && (fast < slow);
+
+   //--- trade direction constraints: ensure we don't open duplicate direction trades if desired
+   bool haveBuy=false, haveSell=false;
+   for(int i=OrdersTotal()-1;i>=0;i--)
+     {
+      if(OrderSelect(i,SELECT_BY_POS,MODE_TRADES))
+        {
+         if(OrderMagicNumber()!=MagicNumber) continue;
+         if(OrderSymbol()!=Symbol()) continue;
+         if(OrderType()==OP_BUY) haveBuy=true;
+         if(OrderType()==OP_SELL) haveSell=true;
+        }
+     }
+
+   //--- open buy
+   if(bullishCrossover && (!OnlyOneTradePerDirection || !haveBuy))
+     {
+      double sl_price = NormalizeDouble(Bid - atr*ATRMultiplier/Point/ (MarketInfo(Symbol(),MODE_POINT)==Point ? 1 : 1) ,Digits);
+      // set SL/TP in pips relative
+      double sl_pips = (Ask - (Ask - atr*ATRMultiplier))/Point;
+      double lot = LotsForSymbol(Symbol(),atr*ATRMultiplier);
+      double tp = Ask + atr*ATRMultiplier*2; // example: TP = 2 * ATR
+      int ticket = OrderSend(Symbol(),OP_BUY,lot,Ask,3,Ask - atr*ATRMultiplier,Ask + atr*ATRMultiplier*2,"EMA_ATR Buy",MagicNumber,0,clrBlue);
+      if(ticket>0) Print("Buy opened, ticket=",ticket," lot=",lot);
+     }
+
+   //--- open sell
+   if(bearishCrossover && (!OnlyOneTradePerDirection || !haveSell))
+     {
+      double lot = LotsForSymbol(Symbol(),atr*ATRMultiplier);
+      int ticket = OrderSend(Symbol(),OP_SELL,lot,Bid,3,Bid + atr*ATRMultiplier,Bid - atr*ATRMultiplier*2,"EMA_ATR Sell",MagicNumber,0,clrRed);
+      if(ticket>0) Print("Sell opened, ticket=",ticket," lot=",lot);
+     }
+
+   //--- manage existing trades: break-even and trailing
+   for(int i=OrdersTotal()-1;i>=0;i--)
+     {
+      if(OrderSelect(i,SELECT_BY_POS,MODE_TRADES)==false) continue;
+      if(OrderMagicNumber()!=MagicNumber) continue;
+      if(OrderSymbol()!=Symbol()) continue;
+
+      // read current ATR for dynamic thresholds
+      double sl_atr = atr * ATRMultiplier;
+      double currentProfitPips = 0;
+      if(OrderType()==OP_BUY) currentProfitPips = (Bid - OrderOpenPrice())/Point;
+      if(OrderType()==OP_SELL) currentProfitPips = (OrderOpenPrice() - Ask)/Point;
+
+      // Break-even
+      if(UseBreakEven && OrderStopLoss()>0 && currentProfitPips > BreakEvenATR*atr/Point)
+        {
+         double new_sl = 0;
+         if(OrderType()==OP_BUY)
+            new_sl = OrderOpenPrice() + 1*Point; // small cushion
+         else
+            new_sl = OrderOpenPrice() - 1*Point;
+         // only move if SL would be improved
+         if((OrderType()==OP_BUY && new_sl > OrderStopLoss()) ||
+            (OrderType()==OP_SELL && new_sl < OrderStopLoss()))
+            OrderModify(OrderTicket(),OrderOpenPrice(),NormalizeDouble(new_sl,Digits),OrderTakeProfit(),0,clrYellow);
+        }
+
+      // Trailing stop (simple)
+      if(UseTrailing)
+        {
+         double trailStart = TrailingStartATR * atr;
+         double trailStep = TrailingStep * atr;
+         if(OrderType()==OP_BUY)
+           {
+            double desiredSL = Bid - trailStep;
+            if(Bid - OrderOpenPrice() > trailStart && desiredSL > OrderStopLoss())
+               OrderModify(OrderTicket(),OrderOpenPrice(),NormalizeDouble(desiredSL,Digits),OrderTakeProfit(),0,clrOrange);
+           }
+         else if(OrderType()==OP_SELL)
+           {
+            double desiredSL = Ask + trailStep;
+            if(OrderOpenPrice() - Ask > trailStart && desiredSL < OrderStopLoss())
+               OrderModify(OrderTicket(),OrderOpenPrice(),NormalizeDouble(desiredSL,Digits),OrderTakeProfit(),0,clrOrange);
+           }
+        }
+     }
+
+  }
+//+------------------------------------------------------------------+
+//| Calculate lot size based on risk % and stop loss pips (MT4)      |
+//+------------------------------------------------------------------+
+double LotsForSymbol(string sym,double stopLossInPrice)
+  {
+   double balance = AccountBalance();
+   double risk = RiskPercent/100.0 * balance;
+   double slPoints = stopLossInPrice / MarketInfo(sym,MODE_POINT);
+   if(slPoints<=0) slPoints=10;
+   double tickValue = MarketInfo(sym,MODE_TICKVALUE);
+   double tickSize  = MarketInfo(sym,MODE_TICKSIZE);
+   // approximate: lot = (risk / (SL in points * point value per 1 lot))
+   // get value per point for 1 lot:
+   double valPerPoint = (tickValue / tickSize); // USD per point for 1 lot approximation
+   double lot = risk / (slPoints * valPerPoint);
+   // clamp by broker limits
+   double minLot = MarketInfo(sym,MODE_MINLOT);
+   double maxLot = MarketInfo(sym,MODE_MAXLOT);
+   if(minLot==0) minLot = MinLot;
+   if(maxLot==0) maxLot = MaxLot;
+   if(lot < minLot) lot = minLot;
+   if(lot > maxLot) lot = maxLot;
+   // normalize to lot step
+   double step = MarketInfo(sym,MODE_LOTSTEP);
+   if(step<=0) step = 0.01;
+   lot = MathFloor(lot/step) * step;
+   if(lot < minLot) lot = minLot;
+   return(NormalizeDouble(lot,2));
+  }
+//+------------------------------------------------------------------+
